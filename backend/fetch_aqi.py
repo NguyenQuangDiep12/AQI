@@ -1,9 +1,15 @@
+# backend/fetch_aqi.py
 import requests
 import pandas as pd
 from datetime import datetime
 import sys
-sys.path.append('C:/DO_AN_CHUYEN_NGANH')  # Thêm thư mục cha để import config
-import config
+import os
+
+# THÊM ĐƯỜNG DẪN GỐC DỰ ÁN (TƯƠNG TỰ CÁC FILE KHÁC)
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, PROJECT_ROOT)
+
+import config  # BÂY GIỜ OK!
 
 def fetch_aqi():
     aqi_data = []
