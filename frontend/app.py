@@ -14,6 +14,9 @@ import urllib.parse # Thư viện để mã hóa URL (quan trọng)
 from textwrap import dedent
 from frontend.components.forecast_bar import create_forecast_bar
 from frontend.components.hourly_chart import create_hourly_chart
+from frontend.utils import find_nearest_province
+from frontend.health_advice import get_health_advice , get_mask_recommendation
+from frontend.components.health_card import create_health_advice_card , create_mask_recommendation_card
 
 @st.cache_data(ttl=3600)  # Cache 1 giờ
 def load_data():
@@ -51,7 +54,7 @@ iframe {
     border: 1px solid #404040;
     border-radius: 8px;
     padding: 10px 16px; /* Căn lề cho chữ */
-    margin-bottom: 6px; /* Khoảng cách với list bên dưới */
+    margin-bottom: 16px; /* Khoảng cách với list bên dưới */
     box-shadow: 0 4px 12px rgba(0,0,0,0.3);
     /* Set chiều cao cố định để ngang bằng nút "Cập nhật" */
     height: 40px; 
@@ -129,6 +132,56 @@ iframe {
     position: relative;
     overflow: hidden;
 }  
+            
+/* CSS cho ô tìm kiếm */
+div[data-testid="stTextInput"] {
+    margin-bottom: 12px;
+}
+
+div[data-testid="stTextInput"] > div > div > input {
+    background-color: #2a2a2a !important;
+    border: 2px solid #404040 !important;
+    border-radius: 8px !important;
+    color: white !important;
+    padding: 12px 16px !important;
+    font-size: 15px !important;
+    transition: all 0.3s ease !important;
+}
+
+div[data-testid="stTextInput"] > div > div > input:focus {
+    border-color: #569156 !important;
+    box-shadow: 0 0 0 3px rgba(86, 145, 86, 0.2) !important;
+    outline: none !important;
+}
+
+div[data-testid="stTextInput"] > div > div > input::placeholder {
+    color: #999 !important;
+    font-style: italic !important;
+}
+
+/* Điều chỉnh chiều cao list khi có search box */
+.right-sidebar-list {
+    margin-top: 10px;
+    height: calc(800px - 100px) !important; /* Trừ đi chiều cao search box */
+    max-height: calc(800px - 100px) !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    background-color: #1a1a1a !important;
+    border-radius: 12px !important;
+    padding: 16px !important;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3) !important;
+}
+            
+/* Animation cho nút định vị */
+@keyframes pulse {
+    0% { box-shadow: 0 0 0 0 rgba(102, 126, 234, 0.7); }
+    70% { box-shadow: 0 0 0 10px rgba(102, 126, 234, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(102, 126, 234, 0); }
+}
+
+.locate-button-container button:active {
+    animation: pulse 1s;
+}
                   
 </style>
 """, unsafe_allow_html=True)
@@ -174,54 +227,178 @@ with col1:
     #========================================================
     # =================================================================
 with col2:
-    # ===== SỬA LỖI TẠI ĐÂY =====
-    
-    # 1. HIỂN THỊ TITLE BAR (RIÊNG BIỆT)
-    # Đây là phần sẽ ngang hàng với nút "Cập nhật"
+    # ===== 1. TITLE BAR =====
     st.markdown('<div class="sidebar-title-box"><h3>Danh sách tỉnh</h3></div>', unsafe_allow_html=True)
     
-    # 2. HIỂN THỊ DANH SÁCH CUỘN (SCROLLBAR)
+    # ===== 2. Ô TÌM KIẾM =====
+    search_query = st.text_input(
+        label="Tìm kiếm tỉnh",
+        placeholder="Nhập tên tỉnh...",
+        key="province_search",
+        label_visibility="collapsed"  # Ẩn label mặc định
+    )
+
+    # =====================================================
+
+     # ===== 2.5. NÚT ĐỊNH VỊ (MỚI) =====
+    # st.markdown("""
+    # <style>
+    # .locate-button-container {
+    #     margin: 8px 0 12px 0;
+    # }
+    # </style>
+    # """, unsafe_allow_html=True)
     
-    # Đọc và lọc dữ liệu
-    # gdf = gpd.read_file(config.DATA_PATH)
-    # gdf['AQI'] = pd.to_numeric(gdf['AQI'], errors='coerce')
-    # provinces = gdf.sort_values('AQI', ascending=False).dropna(subset=['AQI'])
+    # # Hiển thị component HTML với JavaScript để lấy vị trí
+    # location_component = f"""
+    # <div class="locate-button-container">
+    #     <button onclick="getLocation()" style="
+    #         width: 100%;
+    #         padding: 12px;
+    #         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    #         color: white;
+    #         border: none;
+    #         border-radius: 8px;
+    #         font-size: 15px;
+    #         font-weight: bold;
+    #         cursor: pointer;
+    #         transition: all 0.3s ease;
+    #         box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+    #     " onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 6px 20px rgba(102, 126, 234, 0.4)';" 
+    #        onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 12px rgba(102, 126, 234, 0.3)';">
+    #         📍 Định vị tôi
+    #     </button>
+    #     <div id="location-status" style="margin-top:8px; text-align:center; color:#999; font-size:13px;"></div>
+    # </div>
+    
+    # <script>
+    # function getLocation() {{
+    #     const statusDiv = document.getElementById('location-status');
+        
+    #     if (!navigator.geolocation) {{
+    #         statusDiv.innerHTML = '❌ Trình duyệt không hỗ trợ định vị';
+    #         statusDiv.style.color = '#ff4444';
+    #         return;
+    #     }}
+        
+    #     statusDiv.innerHTML = '🔄 Đang lấy vị trí...';
+    #     statusDiv.style.color = '#667eea';
+        
+    #     navigator.geolocation.getCurrentPosition(
+    #         function(position) {{
+    #             const lat = position.coords.latitude;
+    #             const lon = position.coords.longitude;
+                
+    #             // Chuyển hướng về Streamlit với tham số location
+    #             window.parent.location.href = '?lat=' + lat + '&lon=' + lon;
+    #         }},
+    #         function(error) {{
+    #             let errorMsg = '';
+    #             switch(error.code) {{
+    #                 case error.PERMISSION_DENIED:
+    #                     errorMsg = '❌ Bạn đã từ chối quyền truy cập vị trí';
+    #                     break;
+    #                 case error.POSITION_UNAVAILABLE:
+    #                     errorMsg = '❌ Không thể xác định vị trí';
+    #                     break;
+    #                 case error.TIMEOUT:
+    #                     errorMsg = '❌ Hết thời gian chờ';
+    #                     break;
+    #                 default:
+    #                     errorMsg = '❌ Lỗi không xác định';
+    #             }}
+    #             statusDiv.innerHTML = errorMsg;
+    #             statusDiv.style.color = '#ff4444';
+    #         }},
+    #         {{
+    #             enableHighAccuracy: true,
+    #             timeout: 10000,
+    #             maximumAge: 0
+    #         }}
+    #     );
+    # }}
+    # </script>
+    # """
+    
+    # st.components.v1.html(location_component, height=80)
+    
+    # # XỬ LÝ KHI NHẬN ĐƯỢC TỌA ĐỘ
+    # if "lat" in st.query_params and "lon" in st.query_params:
+    #     try:
+    #         from frontend.utils import find_nearest_province
+            
+    #         user_lat = float(st.query_params["lat"])
+    #         user_lon = float(st.query_params["lon"])
+            
+    #         # Tìm tỉnh gần nhất
+    #         nearest, distance = find_nearest_province(user_lat, user_lon, gdf)
+            
+    #         if nearest:
+    #             st.session_state.selected_province = nearest
+    #             st.success(f"✅ Đã định vị: **{nearest}** (cách bạn ~{distance:.1f} km)")
+                
+    #             # Xóa params và reload
+    #             st.query_params.clear()
+    #             st.rerun()
+    #     except Exception as e:
+    #         st.error(f"❌ Lỗi khi xử lý vị trí: {e}")
+    #         st.query_params.clear()
+    
+    # ===== 3. LỌC DỮ LIỆU THEO TÌM KIẾM =====
     provinces = gdf.sort_values('AQI', ascending=False).dropna(subset=['AQI'])
     
-    # Bắt đầu xây dựng chuỗi HTML (cho phần list)
-    # Dùng class mới: .right-sidebar-list
+    # Nếu có từ khóa tìm kiếm, lọc danh sách
+    if search_query:
+        provinces = provinces[
+            provinces['NAME_1'].str.contains(search_query, case=False, na=False)
+        ]
+
+    # Tự động chọn tỉnh đầu tiên nếu chỉ có 1 kết quả
+    if search_query and len(provinces) == 1:
+        auto_select = provinces.iloc[0]['NAME_1']
+        if st.session_state.selected_province != auto_select:
+            st.session_state.selected_province = auto_select
+            st.rerun()
+    
+    # ===== 4. HIỂN THỊ DANH SÁCH =====
     html_list_content = '<div class="right-sidebar-list">'
     
-    for _, row in provinces.iterrows():
-        province = row['NAME_1']
-        aqi = row['AQI']
-        
-        aqi_str = f"{int(aqi)}"
-        if aqi <= 50:
-            color = "#00e400"
-        elif aqi <= 100:
-            color = "#ffff00" # Sửa thành vàng chuẩn
-        elif aqi <= 150:
-            color = "#ff7e00"
-        elif aqi <= 200:
-            color = "#ff0000"
-        else:
-            color = "#99004c"
-        
-        province_url_encoded = urllib.parse.quote(province)
-        
-        # Tránh thụt lề 4+ spaces trong Markdown (bị hiển thị như code block)
-        html_list_content += dedent(f"""
-        <a href="?province={province_url_encoded}" target="_self" class="province-item">
-            {province}
-            <span class='aqi-highlight' style='color: {color};'>{aqi_str}</span>
-        </a>
-        """)
+    if provinces.empty:
+        html_list_content += """
+        <div style="text-align:center; padding:40px; color:#999;">
+            <p style="font-size:18px;">❌ Không tìm thấy tỉnh nào</p>
+            <p style="font-size:14px; margin-top:10px;">Thử tìm kiếm với từ khóa khác</p>
+        </div>
+        """
+    else:
+        for _, row in provinces.iterrows():
+            province = row['NAME_1']
+            aqi = row['AQI']
+            
+            aqi_str = f"{int(aqi)}"
+            if aqi <= 50:
+                color = "#00e400"
+            elif aqi <= 100:
+                color = "#ffff00"
+            elif aqi <= 150:
+                color = "#ff7e00"
+            elif aqi <= 200:
+                color = "#ff0000"
+            else:
+                color = "#99004c"
+            
+            province_url_encoded = urllib.parse.quote(province)
+            
+            html_list_content += dedent(f"""
+            <a href="?province={province_url_encoded}" target="_self" class="province-item">
+                {province}
+                <span class='aqi-highlight' style='color: {color};'>{aqi_str}</span>
+            </a>
+            """)
     
     html_list_content += f'<hr><a href="?province=None" target="_self" class="province-item" style="text-align: center;">🗑️ Ẩn đánh dấu</a>'
     html_list_content += '</div>'
     
-    # Hiển thị list bằng 1 lệnh st.markdown
     st.markdown(html_list_content, unsafe_allow_html=True)
 
 # =========================================================
@@ -341,6 +518,17 @@ else:
         Chọn một tỉnh từ bản đồ hoặc danh sách bên phải để xem chi tiết
     </div>
     """, unsafe_allow_html=True)
+
+if st.session_state.selected_province and current_aqi_value:
+    advice = get_health_advice(current_aqi_value)
+    mask_rec = get_mask_recommendation(current_aqi_value)
+    
+    health_card_html = create_health_advice_card(advice)
+    st.html(health_card_html)
+    
+    if mask_rec:
+        mask_card_html = create_mask_recommendation_card(mask_rec)
+        st.html(mask_card_html)
 
 if st.session_state.selected_province:
     # Truyền AQI hiện tại vào forecast bar để đồng bộ với snack bar
