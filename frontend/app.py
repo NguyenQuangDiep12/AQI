@@ -18,13 +18,6 @@ from frontend.utils import find_nearest_province
 from frontend.health_advice import get_health_advice , get_mask_recommendation
 from frontend.components.health_card import create_health_advice_card , create_mask_recommendation_card
 
-@st.cache_data(ttl=3600)  # Cache 1 giờ
-def load_data():
-    gdf = gpd.read_file(config.DATA_PATH)
-    gdf['AQI'] = pd.to_numeric(gdf['AQI'], errors='coerce')
-    return gdf
-
-gdf = load_data()  # DÙNG CHUNG CHO TOÀN BỘ APP
 # =================================================================
 # 1. CẤU HÌNH TRANG
 # =================================================================
@@ -186,11 +179,111 @@ div[data-testid="stTextInput"] > div > div > input::placeholder {
 </style>
 """, unsafe_allow_html=True)
 
-# =================================================================
-# 3. LAYOUT: TIÊU ĐỀ CHUNG VÀ 2 CỘT
-# =================================================================
-# ĐƯA TIÊU ĐỀ RA NGOÀI ĐỂ NÓ FULL-WIDTH
+# =================== LOAD DATA ===================================
+@st.cache_data(ttl=3600)  # Cache 1 giờ
+def load_data():
+    gdf = gpd.read_file(config.DATA_PATH)
+    gdf['AQI'] = pd.to_numeric(gdf['AQI'], errors='coerce')
+    return gdf
+
+gdf = load_data()  # DÙNG CHUNG CHO TOÀN BỘ APP
+# ==================== TẠO SESSION STATE ==========================
+if 'selected_province' not in st.session_state:
+    st.session_state.selected_province = None
+
+# ==================== TIÊU ĐỀ ====================================
 st.title("AirWatch – Giám sát chất lượng không khí Việt Nam")
+
+# ============ XỬ LÝ QUERY KHI CLICK VÀO TỈNH ======================
+if "province" in st.query_params:
+    clicked_province = urllib.parse.unquote(st.query_params["province"])
+
+    if clicked_province == "None":
+        st.session_state.selected_province = None
+    else:
+        st.session_state.selected_province = clicked_province
+
+    st.query_params.clear()
+
+# ===== Canh bao Nguong~ =======
+if st.session_state.selected_province:
+    selected_data = gdf[gdf['NAME_1'] == st.session_state.selected_province]
+
+    if not selected_data.empty:
+        current_aqi = selected_data.iloc[0]['AQI']
+        province = selected_data.iloc[0]['NAME_1']
+        
+        if not pd.isna(current_aqi):
+            aqi_value = int(current_aqi)
+            
+            # CẢNH BÁO CHỈ KHI AQI > 150
+            if aqi_value > 150:
+                
+                # XÁC ĐỊNH MỨC ĐỘ CẢNH BÁO
+                if aqi_value <= 200:
+                    alert_level = "XẤU"
+                    alert_color = "#ff0000"
+                    alert_icon = "😨"
+                    alert_action = "Hạn chế ra ngoài và đeo khẩu trang N95 khi cần thiết"
+                elif aqi_value <= 300:
+                    alert_level = "RẤT XẤU"
+                    alert_color = "#99004c"
+                    alert_icon = "☠️"
+                    alert_action = "TUYỆT ĐỐI KHÔNG ra ngoài nếu không cần thiết. Đeo khẩu trang N99"
+                else:
+                    alert_level = "NGUY HIỂM"
+                    alert_color = "#7e0023"
+                    alert_icon = "💀"
+                    alert_action = "TÌNH TRẠNG KHẨN CẤP - Ở trong nhà hoàn toàn. Liên hệ cơ quan y tế"
+                
+                # HIỂN THỊ BANNER CẢNH BÁO
+                st.markdown(f"""
+                <div style="
+                    background: linear-gradient(135deg, {alert_color} 0%, {alert_color}dd 100%);
+                    border: 3px solid {alert_color};
+                    border-radius: 12px;
+                    padding: 20px 24px;
+                    margin-bottom: 20px;
+                    box-shadow: 0 8px 24px {alert_color}66;
+                    animation: pulse 2s infinite;
+                ">
+                    <div style="display:flex; align-items:center; gap:16px;">
+                        <span style="font-size:48px;">{alert_icon}</span>
+                        <div style="flex:1;">
+                            <h2 style="
+                                margin:0 0 8px 0; 
+                                color:white; 
+                                font-size:24px; 
+                                font-weight:bold;
+                            ">
+                                🚨 CẢNH BÁO: Chất lượng không khí tại {province} đang ở mức {alert_level}!
+                            </h2>
+                            <p style="
+                                margin:0; 
+                                color:white; 
+                                font-size:16px; 
+                                line-height:1.6;
+                            ">
+                                <strong>AQI hiện tại: {aqi_value}</strong><br>
+                                👉 {alert_action}
+                            </p>
+                        </div>
+                    </div>
+                </div>
+                
+                <style>
+                @keyframes pulse {{
+                    0%, 100% {{
+                        box-shadow: 0 8px 24px {alert_color}66;
+                    }}
+                    50% {{
+                        box-shadow: 0 8px 32px {alert_color}99, 0 0 20px {alert_color}66;
+                    }}
+                }}
+                </style>
+                """, unsafe_allow_html=True)
+
+# Ket thuc canh bao
 
 col1, col2 = st.columns([3, 1])
 
@@ -238,112 +331,6 @@ with col2:
         label_visibility="collapsed"  # Ẩn label mặc định
     )
 
-    # =====================================================
-
-     # ===== 2.5. NÚT ĐỊNH VỊ (MỚI) =====
-    # st.markdown("""
-    # <style>
-    # .locate-button-container {
-    #     margin: 8px 0 12px 0;
-    # }
-    # </style>
-    # """, unsafe_allow_html=True)
-    
-    # # Hiển thị component HTML với JavaScript để lấy vị trí
-    # location_component = f"""
-    # <div class="locate-button-container">
-    #     <button onclick="getLocation()" style="
-    #         width: 100%;
-    #         padding: 12px;
-    #         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    #         color: white;
-    #         border: none;
-    #         border-radius: 8px;
-    #         font-size: 15px;
-    #         font-weight: bold;
-    #         cursor: pointer;
-    #         transition: all 0.3s ease;
-    #         box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
-    #     " onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 6px 20px rgba(102, 126, 234, 0.4)';" 
-    #        onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 12px rgba(102, 126, 234, 0.3)';">
-    #         📍 Định vị tôi
-    #     </button>
-    #     <div id="location-status" style="margin-top:8px; text-align:center; color:#999; font-size:13px;"></div>
-    # </div>
-    
-    # <script>
-    # function getLocation() {{
-    #     const statusDiv = document.getElementById('location-status');
-        
-    #     if (!navigator.geolocation) {{
-    #         statusDiv.innerHTML = '❌ Trình duyệt không hỗ trợ định vị';
-    #         statusDiv.style.color = '#ff4444';
-    #         return;
-    #     }}
-        
-    #     statusDiv.innerHTML = '🔄 Đang lấy vị trí...';
-    #     statusDiv.style.color = '#667eea';
-        
-    #     navigator.geolocation.getCurrentPosition(
-    #         function(position) {{
-    #             const lat = position.coords.latitude;
-    #             const lon = position.coords.longitude;
-                
-    #             // Chuyển hướng về Streamlit với tham số location
-    #             window.parent.location.href = '?lat=' + lat + '&lon=' + lon;
-    #         }},
-    #         function(error) {{
-    #             let errorMsg = '';
-    #             switch(error.code) {{
-    #                 case error.PERMISSION_DENIED:
-    #                     errorMsg = '❌ Bạn đã từ chối quyền truy cập vị trí';
-    #                     break;
-    #                 case error.POSITION_UNAVAILABLE:
-    #                     errorMsg = '❌ Không thể xác định vị trí';
-    #                     break;
-    #                 case error.TIMEOUT:
-    #                     errorMsg = '❌ Hết thời gian chờ';
-    #                     break;
-    #                 default:
-    #                     errorMsg = '❌ Lỗi không xác định';
-    #             }}
-    #             statusDiv.innerHTML = errorMsg;
-    #             statusDiv.style.color = '#ff4444';
-    #         }},
-    #         {{
-    #             enableHighAccuracy: true,
-    #             timeout: 10000,
-    #             maximumAge: 0
-    #         }}
-    #     );
-    # }}
-    # </script>
-    # """
-    
-    # st.components.v1.html(location_component, height=80)
-    
-    # # XỬ LÝ KHI NHẬN ĐƯỢC TỌA ĐỘ
-    # if "lat" in st.query_params and "lon" in st.query_params:
-    #     try:
-    #         from frontend.utils import find_nearest_province
-            
-    #         user_lat = float(st.query_params["lat"])
-    #         user_lon = float(st.query_params["lon"])
-            
-    #         # Tìm tỉnh gần nhất
-    #         nearest, distance = find_nearest_province(user_lat, user_lon, gdf)
-            
-    #         if nearest:
-    #             st.session_state.selected_province = nearest
-    #             st.success(f"✅ Đã định vị: **{nearest}** (cách bạn ~{distance:.1f} km)")
-                
-    #             # Xóa params và reload
-    #             st.query_params.clear()
-    #             st.rerun()
-    #     except Exception as e:
-    #         st.error(f"❌ Lỗi khi xử lý vị trí: {e}")
-    #         st.query_params.clear()
-    
     # ===== 3. LỌC DỮ LIỆU THEO TÌM KIẾM =====
     provinces = gdf.sort_values('AQI', ascending=False).dropna(subset=['AQI'])
     
@@ -421,6 +408,66 @@ IMG_DIR = Path(__file__).parent / "static" / "province"
 
 # Mapping tên tỉnh → tên file ảnh (không dấu, chữ thường)
 PROVINCE_IMAGES = {
+    "An Giang" : "angiang.png",
+    "Bắc Giang": "bacgiang.png",
+    "Bắc Kạn": "backan.png",
+    "Bạc Liêu": "baclieu.png",
+    "Bà Rịa - Vũng Tàu": "bariavungtau.png",
+    "Bến Tre": "bentre.png",
+    "Bình Định": "binhdinh.png",
+    "Bình Dương": "binhduong.png",
+    "Bình Phước": "binhphuoc.png",
+    "Bình Thuận": "binhthuan.png",
+    "Cà Mau": "camau.png",
+    "Cần Thơ": "cantho.png",
+    "Cao Bằng": "caobang.png",
+    "Đắk Lắk": "daklak.png",
+    "Đắk Nông": "daknong.png",
+    "Đà Nẵng": "danang.png",
+    "Điện Biên": "dienbien.png",
+    "Đồng Nai": "dongnai.png",
+    "Đồng Tháp": "dongthap.png",
+    "Gia Lai": "gialai.png",
+    "Hà Giang": "hagiang.png",
+    "Hải Dương": "haiduong.png",
+    "Hải Phòng": "haiphong.png",
+    "Hà Nam": "hanam.png",
+    "Hà Tĩnh": "hatinh.png",
+    "Hậu Giang": "haugiang.png",
+    "Hòa Bình": "hoabinh.png",
+    "Thừa Thiên Huế": "hue.png",
+    "Hưng Yên": "hungyen.png",
+    "Khánh Hòa": "khanhhoa.png",
+    "Kiên Giang": "kiengiang.png",
+    "Kon Tum": "kontum.png",
+    "Lai Châu": "laichau.png",
+    "Lâm Đồng": "lamdong.png",
+    "Lạng Sơn": "langson.png",
+    "Lào Cai": "laocai.png",
+    "Long An": "longan.png",
+    "Nam Định": "namdinh.png",
+    "Nghệ An": "nghean.png",
+    "Ninh Bình": "ninhbinh.png",
+    "Ninh Thuận": "ninhthuan.png",
+    "Phú Thọ": "phutho.png",
+    "Phú Yên": "phuyen.png",
+    "Quảng Bình": "quangbinh.png",
+    "Quảng Nam": "quangnam.png",
+    "Quảng Ngãi": "quangngai.png",
+    "Quảng Ninh": "quangninh.png",
+    "Quảng Trị": "quangtri.png",
+    "Sóc Trăng": "soctrang.png",
+    "Sơn La": "sonla.png",
+    "Tam Đảo": "tamdao.png",
+    "Tây Ninh": "tayninh.png",
+    "Thái Bình": "thaibinh.png",
+    "Thái Nguyên": "thainguyen.png",
+    "Thanh Hóa": "thanhhoa.png",
+    "Tiền Giang": "tiengiang.png",
+    "Trà Vinh": "travinh.png",
+    "Tuyên Quang": "tuyernquang.png",
+    "Vĩnh Long": "vinhlong.png",
+    "Yên Bái": "yenbai.png",
     "Hà Nội": "hanoi.png",
     "Hồ Chí Minh": "hochiminh.png",
     "Đà Nẵng": "danang.png",
@@ -584,5 +631,23 @@ else:
         Dự báo 24 giờ
     </div>
     """, unsafe_allow_html=True)
+
+# =============== Trung binh toan quoc + tinh tot nhat + tinh te nhat ==================
+st.markdown(f"""
+<div style="display:flex; gap:20px; margin-bottom:20px;margin-top:20px;">
+    <div style="flex:1; background:#2a2a2a; padding:20px; border-radius:12px;border:1px solid #fff;">
+        <h4>🌍 Trung bình toàn quốc</h4>
+        <h2 style="color:#ffff00;">{int(gdf['AQI'].mean())}</h2>
+    </div>
+    <div style="flex:1; background:#2a2a2a; padding:20px; border-radius:12px;border:1px solid #fff;">
+        <h4>🏆 Tỉnh tốt nhất</h4>
+        <h2 style="color:#00e400;">{gdf.sort_values('AQI').iloc[0]['NAME_1']}</h2>
+    </div>
+    <div style="flex:1; background:#2a2a2a; padding:20px; border-radius:12px;border:1px solid #fff;">
+        <h4>⚠️ Tỉnh tệ nhất</h4>
+        <h2 style="color:#ff0000;">{gdf.sort_values('AQI', ascending=False).iloc[0]['NAME_1']}</h2>
+    </div>
+</div>
+""", unsafe_allow_html=True)
 
 # st.caption("**Dữ liệu cập nhật tự động lúc 8:00 AM** | Nguồn: AQICN + GADM")

@@ -138,7 +138,7 @@ def create_popup_html(row):
 # === TẠO BẢN ĐỒ ===
 def create_map(selected_province=None):  # THÊM THAM SỐ
     gdf = gpd.read_file(config.DATA_PATH)
-    m = folium.Map(location=[16.0, 107.0], zoom_start=6, tiles=None, bgcolor='#e6f2ff')
+    m = folium.Map(location=[16.0, 107.0], zoom_start=7, tiles=None, bgcolor='#e6f2ff')
 
 
     for _, row in gdf.iterrows():
@@ -183,6 +183,33 @@ def create_map(selected_province=None):  # THÊM THAM SỐ
         if is_selected:
             bounds = row['geometry'].bounds
             m.fit_bounds([[bounds[1], bounds[0]], [bounds[3], bounds[2]]])
+
+        centroid = row['geometry'].centroid
+        lat = centroid.y
+        lon = centroid.x
+        
+        # Tạo label cho tên tỉnh
+        folium.Marker(
+            location=[lat, lon],
+            icon=folium.DivIcon(html=f"""
+                <div style="
+                    font-family: Arial, sans-serif;
+                    font-size: 12px;
+                    font-weight: bold;
+                    color: #000;
+                    text-align: center;
+                    white-space: nowrap;
+                    text-shadow: 
+                        -1px -1px 0 #fff,
+                        1px -1px 0 #fff,
+                        -1px 1px 0 #fff,
+                        1px 1px 0 #fff,
+                        0 0 3px #fff;
+                ">
+                    {province}
+                </div>
+            """)
+        ).add_to(m)
 
     # === LEGEND ===
     # (Legend của bạn đã đúng, không cần sửa)
