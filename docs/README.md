@@ -45,6 +45,7 @@ py backend/fetch_aqi.py
 
 ```bash
 py backend/data_processing.py
+py -m backend.data_processing
 ```
 
 ### 5) Khởi chạy ứng dụng

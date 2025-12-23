@@ -194,7 +194,16 @@ def get_forecast_fake(province_name):
             aqi = current_aqi  # Hôm nay = AQI hiện tại
         else:
             # Dao động ±20% so với current_aqi
-            variation = np.random.randint(-int(current_aqi*0.15), int(current_aqi*0.2))
+            # variation = np.random.randint(-int(current_aqi*0.15), int(current_aqi*0.2))
+            # sửa bug khi current_aqi nhỏ nhân với số 0.15 ép kiểu int ra -0 gây lỗi
+            delta_low = max(1, int(round(current_aqi * 0.15)))
+            delta_high = max(1, int(round(current_aqi * 0.2)))
+
+            try:
+                variation = np.random.randint(-delta_low, delta_high + 1)
+            except ValueError:
+                variation = 0
+
             aqi = max(10, min(300, current_aqi + variation))
         
         target_date = today + timedelta(days=i)
